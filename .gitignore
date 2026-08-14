@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+*.local.json
+
+# Frontend dependencies and build output
+web/node_modules/
+web/dist/
+web/.vite/
+web/tsconfig.tsbuildinfo
+
+# Local credentials, configuration, and request history
+config/config.json
+config/tokens.json
+config/refresh_profiles.json
+config/request_logs.json
+
+# Local user data and generated media
+data/
+outputs/
+
+# Local runtime files
+*.log
+*.err
+*.pid
+
+# Reference repositories retained only for local comparison
+.ref-adobe2api/
+adobe2api_ref/
+
+# OS files
+.DS_Store
+Thumbs.db

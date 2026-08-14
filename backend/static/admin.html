@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本地画布 · 管理后台</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --border: #2a2f3a;
+    --text: #e6e9ef;
+    --muted: #8b93a3;
+    --accent: #4f8cff;
+    --accent-2: #2f6fe0;
+    --green: #3fb95e;
+    --red: #e5534b;
+    --amber: #d99a2b;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 14px;
+    display: flex;
+    min-height: 100vh;
+  }
+  a { color: var(--accent); text-decoration: none; }
+
+  /* ---------- 侧边栏 ---------- */
+  aside {
+    width: 210px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px 12px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .brand {
+    font-size: 16px;
+    font-weight: 700;
+    padding: 6px 12px 18px;
+    letter-spacing: .5px;
+  }
+  .brand small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; margin-top: 3px; }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s, color .15s;
+  }
+  .nav-item:hover { background: var(--panel-2); color: var(--text); }
+  .nav-item.active { background: rgba(79,140,255,.15); color: var(--accent); }
+  .nav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+  .side-footer {
+    margin-top: auto;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--green); }
+  .dot.bad { background: var(--red); }
+
+  /* ---------- 主区域 ---------- */
+  main { flex: 1; padding: 24px 28px; max-width: 1280px; }
+  .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .page-head h1 { font-size: 20px; font-weight: 650; }
+  .page-head .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .hidden { display: none !important; }
+
+  /* ---------- 卡片 / 表格 ---------- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .card .label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .card .value { font-size: 22px; font-weight: 650; }
+  .card .value.green { color: var(--green); }
+  .card .value.red { color: var(--red); }
+  .card .value.amber { color: var(--amber); }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .panel h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .panel h3 .hint { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 12px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid rgba(42,47,58,.55); vertical-align: middle; word-break: break-all; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .table-wrap { overflow-x: auto; }
+
+  /* ---------- 徽章 ---------- */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .badge.green { background: rgba(63,185,94,.15); color: var(--green); }
+  .badge.red { background: rgba(229,83,75,.15); color: var(--red); }
+  .badge.amber { background: rgba(217,154,43,.15); color: var(--amber); }
+  .badge.gray { background: rgba(139,147,163,.15); color: var(--muted); }
+  .badge.blue { background: rgba(79,140,255,.15); color: var(--accent); }
+
+  /* ---------- 按钮 / 表单 ---------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 7px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+  .btn.primary:hover { background: var(--accent); }
+  .btn.danger { color: var(--red); }
+  .btn.danger:hover { border-color: var(--red); background: rgba(229,83,75,.1); }
+  .btn.sm { padding: 4px 10px; font-size: 12px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { color: var(--muted); font-size: 12px; }
+  .field label .req { color: var(--red); }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 8px 11px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+    width: 100%;
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 90px; font-family: Consolas, "Courier New", monospace; }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
+  .check input { width: 15px; height: 15px; accent-color: var(--accent); }
+  .form-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar select { width: auto; }
+
+  /* ---------- 弹窗 / toast ---------- */
+  .toast-wrap { position: fixed; top: 18px; right: 18px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    min-width: 220px;
+    max-width: 420px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.4);
+    animation: slideIn .2s ease;
+  }
+  .toast.ok { border-left-color: var(--green); }
+  .toast.err { border-left-color: var(--red); }
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center; z-index: 500;
+  }
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    width: min(560px, 92vw);
+    max-height: 85vh;
+    overflow: auto;
+  }
+  .modal h3 { margin-bottom: 14px; }
+
+  /* ---------- 通道测试结果 ---------- */
+  .ch-result { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .ch-item {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .ch-item .name { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .ch-item .line { font-size: 12px; margin-top: 4px; word-break: break-all; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+
+  /* ---------- 日志预览 ---------- */
+  .log-detail { margin-top: 10px; background: #0b0d11; border-radius: 8px; padding: 12px; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; color: #9fd3a0; }
+
+  /* 分页 */
+  .pager { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: var(--muted); font-size: 13px; }
+  .pager .btn:disabled { opacity: .35; }
+
+  .mono { font-family: Consolas, "Courier New", monospace; }
+  .muted { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 30px 0; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand">
+    本地画布
+    <small>Local Canvas · 管理后台</small>
+  </div>
+  <div class="nav-item active" data-page="overview" id="nav-overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    概览
+  </div>
+  <div class="nav-item" data-page="config" id="nav-config">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    配置
+  </div>
+  <div class="nav-item" data-page="tokens" id="nav-tokens">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v4"/><path d="M20 12a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4z"/><circle cx="12" cy="14" r="1.4"/></svg>
+    Token 池
+  </div>
+  <div class="nav-item" data-page="cookies" id="nav-cookies">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5z"/><path d="M8.5 8.5h.01M16 15h.01M12 12h.01"/></svg>
+    Cookie
+  </div>
+  <div class="nav-item" data-page="logs" id="nav-logs">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M4 9h16M4 14h16M9 4v5M15 4v5"/></svg>
+    日志
+  </div>
+  <div class="side-footer">
+    <span class="dot" id="health-dot"></span>
+    <span id="health-text">检测中...</span>
+  </div>
+</aside>
+
+<main>
+  <!-- ================= 概览 ================= -->
+  <section id="page-overview">
+    <div class="page-head">
+      <div>
+        <h1>概览</h1>
+        <div class="sub">后端运行状态与通道连通性</div>
+      </div>
+      <button class="btn primary" onclick="runChannelTest()">测试通道</button>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="label">后端状态</div>
+        <div class="value" id="ov-health">--</div>
+      </div>
+      <div class="card">
+        <div class="label">Token 总数</div>
+        <div class="value" id="ov-token-count">--</div>
+      </div>
+      <div class="card">
+        <div class="label">有效 Token</div>
+        <div class="value green" id="ov-token-active">--</div>
+      </div>
+      <div class="card">
+        <div class="label">可用积分</div>
+        <div class="value" id="ov-credits">--</div>
+      </div>
+      <div class="card">
+        <div class="label">Cookie 配置</div>
+        <div class="value" id="ov-cookie-count">--</div>
+      </div>
+      <div class="card">
+        <div class="label">请求日志</div>
+        <div class="value" id="ov-log-total">--</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>通道测试结果 <span class="hint">点击右上角"测试通道"运行</span></h3>
+      <div id="ch-results" class="ch-result">
+        <div class="ch-item"><div class="name">Firefly</div><div class="muted">尚未测试</div></div>
+        <div class="ch-item"><div class="name">外部 API</div><div class="muted">尚未测试</div></div>
+        <div class="ch-item"><div class="name">代理</div><div class="muted">尚未测试</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 配置 ================= -->
+  <section id="page-config" class="hidden">
+    <div class="page-head">
+      <div>
+        <h1>后端配置</h1>
+        <div class="sub">config/config.json · 保存后立即生效</div>
+      </div>
+      <button class="btn primary" onclick="saveConfig()">保存配置</button>
+    </div>
+
+    <div class="panel">
+      <h3>Firefly 与管理员</h3>
+      <div class="form-grid">
+        <div class="field full">
+          <label>api_key（Firefly 全局 Key，可选）</label>
+          <input type="password" id="cfg-api-key" placeholder="留空则不修改">
+        </div>
+        <div class="field">
+          <label>admin_username</label>
+          <input type="text" id="cfg-admin-user" placeholder="admin">
+        </div>
+        <div class="field">
+          <label>admin_password <span class="muted">（留空则不修改）</span></label>
+          <input type="password" id="cfg-admin-pass" placeholder="••••••">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>网络与代理</h3>
+      <div class="form-grid">
+        <div class="field">
+          <label class="check"><input type="checkbox" id="cfg-use-proxy"> 启用代理</label>
+        </div>
+        <div class="field">
+          <label>proxy</label>
+          <input type="text" id="cfg-proxy" placeholder="http://127.0.0.1:7897">
+        </div>
+        <div class="field">
+          <label>generate_timeout（秒）</label>
+          <input type="number" id="cfg-timeout" placeholder="300">
+        </div>
+        <div class="field">
+          <label>token_rotation_strategy</label>
+          <select id="cfg-rotation">
+            <option value="round_robin">round_robin（轮询）</option>
+            <option value="random">random（随机）</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label>gpt_image_quality</label>
+          <input type="text" id="cfg-quality" placeholder="high / medium / low" list="quality-list">
+          <datalist id="quality-list">
+            <option value="high"></option>
+            <option value="medium"></option>
+            <option value="low"></option>
+          </datalist>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>外部 OpenAI 兼容渠道 <span class="hint">文本对话走此通道；未配置时返回 502</span></h3>
+      <div class="form-grid">
+        <div class="field full">
+          <label>external_base_url</label>
+          <input type="text" id="cfg-ext-url" placeholder="https://api.example.com/v1">
+        </div>
+        <div class="field full">
+          <label>external_api_key</label>
+          <input type="password" id="cfg-ext-key" placeholder="sk-...">
+        </div>
+        <div class="field full">
+          <label>default_channel（默认对话渠道）</label>
+          <input type="text" id="cfg-default-channel" placeholder="external / firefly" list="channel-list">
+          <datalist id="channel-list">
+            <option value="external"></option>
+            <option value="firefly"></option>
+          </datalist>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Token ================= -->
+  <section id="page-tokens" class="hidden">
+    <div class="page-head">
+      <div>
+        <h1>Token 池</h1>
+        <div class="sub">config/tokens.json · 与 adobe2api 格式完全兼容</div>
+      </div>
+      <div>
+        <button class="btn" onclick="refreshAllCredits()">批量刷新积分</button>
+        <button class="btn" onclick="exportTokens()">导出</button>
+        <button class="btn danger" onclick="deleteSelectedTokens()" id="btn-del-selected" disabled>删除选中</button>
+        <button class="btn primary" onclick="openAddToken()">添加 Token</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="toolbar">
+        <span class="muted">共 <b id="tk-count">0</b> 个 Token</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:34px"><input type="checkbox" id="tk-check-all" onchange="toggleCheckAll(this)"></th>
+              <th>名称</th>
+              <th>状态</th>
+              <th>失败</th>
+              <th>积分 (可用/已用)</th>
+              <th>过期时间</th>
+              <th>自动刷新</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="tk-tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="tk-empty">暂无 Token，点击右上角"添加 Token"或到 Cookie 页导入</div>
+    </div>
+  </section>
+
+  <!-- ================= Cookie ================= -->
+  <section id="page-cookies" class="hidden">
+    <div class="page-head">
+      <div>
+        <h1>Cookie 管理</h1>
+        <div class="sub">config/refresh_profiles.json · 导入后自动刷新换取 IMS Token</div>
+      </div>
+      <div>
+        <button class="btn" onclick="exportCookies()">导出</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>导入 Cookie</h3>
+      <div class="form-grid">
+        <div class="field full">
+          <label>粘贴 cookie（支持格式：<span class="mono">name=value; k2=v2</span>、<span class="mono">{"cookie":"..."}</span>、浏览器插件数组 JSON）</label>
+          <textarea id="ck-input" placeholder='adobe_token=xxx; at_check=true; ...'></textarea>
+        </div>
+        <div class="field">
+          <label>备注名称（可选）</label>
+          <input type="text" id="ck-name" placeholder="如：主账号 / 备用账号">
+        </div>
+        <div class="field" style="justify-content:flex-end; flex-direction:row; align-items:flex-end">
+          <button class="btn primary" onclick="importCookie()">导入并刷新</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>已导入的 Cookie</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>失败次数</th>
+              <th>添加时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="ck-tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="ck-empty">尚未导入 Cookie</div>
+    </div>
+  </section>
+
+  <!-- ================= 日志 ================= -->
+  <section id="page-logs" class="hidden">
+    <div class="page-head">
+      <div>
+        <h1>请求日志</h1>
+        <div class="sub">最近 5000 条请求记录</div>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="label">总请求</div><div class="value" id="lg-total">--</div></div>
+      <div class="card"><div class="label">成功 (2xx)</div><div class="value green" id="lg-success">--</div></div>
+      <div class="card"><div class="label">错误</div><div class="value red" id="lg-error">--</div></div>
+      <div class="card"><div class="label">平均耗时</div><div class="value" id="lg-avg">--</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="toolbar">
+        <select id="lg-status" onchange="loadLogs(1)">
+          <option value="">全部状态</option>
+          <option value="2">成功 2xx</option>
+          <option value="4">4xx</option>
+          <option value="5">5xx</option>
+          <option value="0">进行中</option>
+        </select>
+        <span class="spacer"></span>
+        <button class="btn" onclick="loadLogs(1)">刷新</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>方法</th>
+              <th>路径</th>
+              <th>模型</th>
+              <th>状态</th>
+              <th>耗时</th>
+              <th>详情</th>
+            </tr>
+          </thead>
+          <tbody id="lg-tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="lg-empty">暂无日志</div>
+      <div class="pager" id="lg-pager"></div>
+    </div>
+  </section>
+</main>
+
+<div class="modal-mask hidden" id="add-token-modal">
+  <div class="modal">
+    <h3>添加 Token</h3>
+    <div class="form-grid">
+      <div class="field full">
+        <label>IMS access_token（JWT）<span class="req">*</span></label>
+        <textarea id="at-value" placeholder="eyJhbGciOiJSUzI1NiIs..."></textarea>
+      </div>
+      <div class="field full">
+        <label>名称（可选）</label>
+        <input type="text" id="at-name" placeholder="如：主账号">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn primary" onclick="doAddToken()">添加</button>
+      <button class="btn" onclick="closeAddToken()">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const API = {
+  health: '/api/health',
+  config: '/api/config',
+  testChannel: '/api/config/test-channel',
+  tokens: '/api/tokens',
+  creditsTotal: '/api/tokens/credits/total',
+  cookies: '/api/cookies',
+  logs: '/api/logs',
+  logStats: '/api/logs/stats',
+};
+
+async function fetchJSON(url, options = {}) {
+  const resp = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  let data = null;
+  try { data = await resp.json(); } catch (_) { data = null; }
+  if (!resp.ok) {
+    const detail = (data && (data.detail || data.message)) || `HTTP ${resp.status}`;
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+  }
+  return data;
+}
+
+// ---------- Toast ----------
+function toast(msg, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  $('toast-wrap').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ---------- 工具 ----------
+function fmtTime(ts) {
+  if (!ts) return '--';
+  const d = new Date(ts * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function maskToken(v) {
+  if (!v) return '--';
+  if (v.length <= 32) return v.slice(0, 12) + '...';
+  return v.slice(0, 24) + '...' + v.slice(-12);
+}
+function statusBadge(status) {
+  const map = {
+    valid: ['green', '有效'],
+    invalid: ['red', '无效'],
+    refresh_pending: ['amber', '待刷新'],
+    active: ['green', '有效'],
+  };
+  const [cls, txt] = map[status] || ['gray', status || '--'];
+  return `<span class="badge ${cls}">${txt}</span>`;
+}
+function durationStr(ms) {
+  if (ms == null) return '--';
+  if (ms < 1000) return ms + ' ms';
+  return (ms / 1000).toFixed(1) + ' s';
+}
+
+// ---------- 导航 ----------
+document.querySelectorAll('.nav-item').forEach((el) => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
+    el.classList.add('active');
+    document.querySelectorAll('main > section').forEach((s) => s.classList.add('hidden'));
+    $('page-' + el.dataset.page).classList.remove('hidden');
+    if (el.dataset.page === 'overview') loadOverview();
+    if (el.dataset.page === 'config') loadConfig();
+    if (el.dataset.page === 'tokens') loadTokens();
+    if (el.dataset.page === 'cookies') loadCookies();
+    if (el.dataset.page === 'logs') loadLogs(1);
+  });
+});
+
+// ================= 概览 =================
+async function loadOverview() {
+  try {
+    const health = await fetchJSON(API.health);
+    $('ov-health').textContent = health.ok ? '在线' : '异常';
+    $('ov-health').className = 'value ' + (health.ok ? 'green' : 'red');
+    const dot = $('health-dot');
+    dot.className = 'dot ' + (health.ok ? 'ok' : 'bad');
+    $('health-text').textContent = health.ok ? '后端在线' : '后端异常';
+  } catch (e) {
+    $('ov-health').textContent = '离线';
+    $('ov-health').className = 'value red';
+    $('health-dot').className = 'dot bad';
+    $('health-text').textContent = '后端离线';
+  }
+  try {
+    const tokens = await fetchJSON(API.tokens);
+    const active = tokens.filter((t) => t.status === 'valid' || t.status === 'active');
+    $('ov-token-count').textContent = tokens.length;
+    $('ov-token-active').textContent = active.length;
+  } catch (_) {}
+  try {
+    const credits = await fetchJSON(API.creditsTotal);
+    $('ov-credits').textContent = Math.round(credits.total_available || 0).toLocaleString();
+  } catch (_) {}
+  try {
+    const cookies = await fetchJSON(API.cookies);
+    $('ov-cookie-count').textContent = cookies.length;
+  } catch (_) {}
+  try {
+    const stats = await fetchJSON(API.logStats);
+    $('ov-log-total').textContent = stats.total ?? 0;
+  } catch (_) {}
+}
+
+async function runChannelTest() {
+  toast('正在测试通道，请稍候...');
+  const btn = event?.target || document.querySelector('.page-head .btn.primary');
+  if (btn) btn.disabled = true;
+  $('ch-results').innerHTML = '<div class="ch-item" style="grid-column:1/-1"><div class="muted">测试中...</div></div>';
+  try {
+    const r = await fetchJSON(API.testChannel, { method: 'POST' });
+    renderChannelResults(r);
+  } catch (e) {
+    $('ch-results').innerHTML = `<div class="ch-item" style="grid-column:1/-1"><div class="name">测试失败</div><div class="line" style="color:var(--red)">${esc(e.message)}</div></div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderChannelResults(r) {
+  const html = [];
+  // Firefly
+  const ff = r.firefly || {};
+  const ffOk = ff.ok ? 'green' : 'red';
+  html.push(`<div class="ch-item">
+    <div class="name">Firefly</div>
+    <span class="badge ${ffOk}">${ff.ok ? '正常' : '异常'}</span>
+    <div class="line muted">${esc(ff.message || '')}</div>
+    <div class="kv"><span>Token 池</span><span>${ff.token_pool?.total ?? 0} / 有效 ${ff.token_pool?.active ?? 0}</span></div>
+    <div class="kv"><span>网络</span><span>${esc(ff.network?.info || '--')}</span></div>
+    <div class="kv"><span>Token 校验</span><span>${ff.token ? (ff.token.valid === true ? '有效' : ff.token.valid === false ? '无效' : '未校验') : '--'} ${esc(ff.token?.info || '')}</span></div>
+    <div class="kv"><span>延迟</span><span>${durationStr(ff.latency_ms)}</span></div>
+  </div>`);
+  // External
+  const ex = r.external || {};
+  const exOk = ex.ok ? 'green' : (ex.message && !ex.message.includes('未配置') ? 'red' : 'gray');
+  const exTxt = ex.ok ? '正常' : (ex.message?.includes('未配置') ? '未启用' : '异常');
+  html.push(`<div class="ch-item">
+    <div class="name">外部 API</div>
+    <span class="badge ${exOk}">${exTxt}</span>
+    <div class="line muted">${esc(ex.message || '')}</div>
+    <div class="kv"><span>模型数</span><span>${ex.model_count ?? '--'}</span></div>
+    <div class="kv"><span>HTTP</span><span>${ex.http_code ?? '--'}</span></div>
+    <div class="kv"><span>延迟</span><span>${durationStr(ex.latency_ms)}</span></div>
+  </div>`);
+  // Proxy
+  const pr = r.proxy || {};
+  const prOk = pr.ok === true ? 'green' : (pr.ok === false ? 'red' : 'gray');
+  const prTxt = pr.ok === true ? '正常' : (pr.ok === false ? '异常' : '未启用');
+  html.push(`<div class="ch-item">
+    <div class="name">代理</div>
+    <span class="badge ${prOk}">${prTxt}</span>
+    <div class="line muted">${esc(pr.info || '')}</div>
+    <div class="kv"><span>延迟</span><span>${durationStr(pr.latency_ms)}</span></div>
+  </div>`);
+  $('ch-results').innerHTML = html.join('');
+}
+
+// ================= 配置 =================
+async function loadConfig() {
+  try {
+    const cfg = await fetchJSON(API.config);
+    $('cfg-api-key').value = cfg.api_key || '';
+    $('cfg-admin-user').value = cfg.admin_username || '';
+    $('cfg-admin-pass').value = '';
+    $('cfg-use-proxy').checked = !!cfg.use_proxy;
+    $('cfg-proxy').value = cfg.proxy || '';
+    $('cfg-timeout').value = cfg.generate_timeout ?? '';
+    $('cfg-rotation').value = cfg.token_rotation_strategy || 'round_robin';
+    $('cfg-quality').value = cfg.gpt_image_quality || '';
+    $('cfg-ext-url').value = cfg.external_base_url || '';
+    $('cfg-ext-key').value = cfg.external_api_key || '';
+    $('cfg-default-channel').value = cfg.default_channel || '';
+  } catch (e) {
+    toast('读取配置失败: ' + e.message, 'err');
+  }
+}
+
+async function saveConfig() {
+  const patch = {};
+  const set = (key, val) => { if (val !== '' && val != null) patch[key] = val; };
+  set('api_key', $('cfg-api-key').value.trim());
+  set('admin_username', $('cfg-admin-user').value.trim());
+  if ($('cfg-admin-pass').value) set('admin_password', $('cfg-admin-pass').value);
+  patch.use_proxy = $('cfg-use-proxy').checked;
+  set('proxy', $('cfg-proxy').value.trim());
+  set('generate_timeout', parseInt($('cfg-timeout').value, 10) || undefined);
+  set('token_rotation_strategy', $('cfg-rotation').value);
+  set('gpt_image_quality', $('cfg-quality').value.trim());
+  set('external_base_url', $('cfg-ext-url').value.trim());
+  set('external_api_key', $('cfg-ext-key').value.trim());
+  set('default_channel', $('cfg-default-channel').value.trim());
+  try {
+    await fetchJSON(API.config, { method: 'PUT', body: JSON.stringify(patch) });
+    toast('配置已保存并生效');
+  } catch (e) {
+    toast('保存失败: ' + e.message, 'err');
+  }
+}
+
+// ================= Token =================
+let selectedTokenIds = new Set();
+
+function toggleCheckAll(el) {
+  document.querySelectorAll('.tk-check').forEach((c) => { c.checked = el.checked; });
+  selectedTokenIds.clear();
+  if (el.checked) {
+    document.querySelectorAll('.tk-check').forEach((c) => selectedTokenIds.add(c.dataset.id));
+  }
+  updateDelBtn();
+}
+
+function toggleOne(el) {
+  const id = el.dataset.id;
+  if (el.checked) selectedTokenIds.add(id);
+  else selectedTokenIds.delete(id);
+  const all = document.querySelectorAll('.tk-check');
+  $('tk-check-all').checked = all.length > 0 && [...all].every((c) => c.checked);
+  updateDelBtn();
+}
+
+function updateDelBtn() {
+  $('btn-del-selected').disabled = selectedTokenIds.size === 0;
+}
+
+async function loadTokens() {
+  try {
+    const tokens = await fetchJSON(API.tokens);
+    $('tk-count').textContent = tokens.length;
+    const tbody = $('tk-tbody');
+    tbody.innerHTML = '';
+    selectedTokenIds.clear();
+    $('tk-check-all').checked = false;
+    updateDelBtn();
+    if (tokens.length === 0) {
+      $('tk-empty').classList.remove('hidden');
+      return;
+    }
+    $('tk-empty').classList.add('hidden');
+    tokens.forEach((t) => {
+      const credits = t.credits || {};
+      const avail = credits.available ?? '--';
+      const used = credits.used ?? '--';
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><input type="checkbox" class="tk-check" data-id="${esc(t.id)}" onchange="toggleOne(this)"></td>
+        <td>
+          <div style="font-weight:500">${esc(t.name || '--')}</div>
+          <div class="muted mono" style="font-size:11px" title="${esc(t.value || '')}">${esc(maskToken(t.value))}</div>
+        </td>
+        <td>${statusBadge(t.status)}</td>
+        <td>${t.fails ?? 0}</td>
+        <td>
+          <span class="${typeof avail === 'number' ? 'green' : 'muted'}">${typeof avail === 'number' ? avail.toLocaleString() : '--'}</span>
+          <span class="muted">/ ${typeof used === 'number' ? used.toLocaleString() : '--'}</span>
+        </td>
+        <td class="muted">${fmtTime(t.expiry)}</td>
+        <td>
+          <label class="check" style="font-size:12px">
+            <input type="checkbox" ${t.auto_refresh ? 'checked' : ''} onchange="setAutoRefresh('${esc(t.id)}', this.checked)">
+          </label>
+        </td>
+        <td style="white-space:nowrap">
+          <button class="btn sm" onclick="refreshCredits('${esc(t.id)}')">刷积分</button>
+          <button class="btn sm" onclick="toggleTokenStatus('${esc(t.id)}','${t.status === 'valid' || t.status === 'active' ? 'invalid' : 'valid'}')">${t.status === 'valid' || t.status === 'active' ? '禁用' : '启用'}</button>
+          <button class="btn sm danger" onclick="deleteToken('${esc(t.id)}')">删除</button>
+        </td>`;
+      tbody.appendChild(row);
+    });
+  } catch (e) {
+    toast('加载 Token 失败: ' + e.message, 'err');
+  }
+}
+
+function openAddToken() { $('add-token-modal').classList.remove('hidden'); }
+function closeAddToken() { $('add-token-modal').classList.add('hidden'); $('at-value').value = ''; $('at-name').value = ''; }
+
+async function doAddToken() {
+  const value = $('at-value').value.trim();
+  if (!value) { toast('请输入 token', 'err'); return; }
+  try {
+    await fetchJSON(API.tokens, { method: 'POST', body: JSON.stringify({ value, name: $('at-name').value.trim() || undefined }) });
+    toast('Token 已添加');
+    closeAddToken();
+    loadTokens();
+    loadOverview();
+  } catch (e) {
+    toast('添加失败: ' + e.message, 'err');
+  }
+}
+
+async function deleteToken(id) {
+  if (!confirm('确认删除该 Token？')) return;
+  try {
+    await fetchJSON(`${API.tokens}/${id}`, { method: 'DELETE' });
+    toast('已删除');
+    loadTokens(); loadOverview();
+  } catch (e) { toast('删除失败: ' + e.message, 'err'); }
+}
+
+async function toggleTokenStatus(id, status) {
+  try {
+    await fetchJSON(`${API.tokens}/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
+    toast(status === 'valid' ? '已启用' : '已禁用');
+    loadTokens(); loadOverview();
+  } catch (e) { toast('操作失败: ' + e.message, 'err'); }
+}
+
+async function setAutoRefresh(id, enabled) {
+  try {
+    await fetchJSON(`${API.tokens}/${id}/auto-refresh`, { method: 'POST', body: JSON.stringify({ enabled }) });
+    toast(enabled ? '已开启自动刷新' : '已关闭自动刷新');
+  } catch (e) { toast('操作失败: ' + e.message, 'err'); }
+}
+
+async function refreshCredits(id) {
+  try {
+    const r = await fetchJSON(`${API.tokens}/${id}/credits/refresh`, { method: 'POST' });
+    const c = r.credits || {};
+    toast(`刷新成功：可用 ${c.available ?? '--'} 积分`);
+    loadTokens(); loadOverview();
+  } catch (e) { toast('刷新失败: ' + e.message, 'err'); }
+}
+
+async function refreshAllCredits() {
+  const tokens = await fetchJSON(API.tokens).catch(() => []);
+  const ids = tokens.map((t) => t.id);
+  if (ids.length === 0) { toast('没有 Token 可刷新', 'err'); return; }
+  if (!confirm(`将刷新 ${ids.length} 个 Token 的积分，继续？`)) return;
+  try {
+    const r = await fetchJSON('/api/tokens/credits/refresh-batch', { method: 'POST', body: JSON.stringify({ ids }) });
+    const ok = r.results.filter((x) => !x.error).length;
+    toast(`完成 ${ok}/${r.results.length}`);
+    loadTokens(); loadOverview();
+  } catch (e) { toast('批量刷新失败: ' + e.message, 'err'); }
+}
+
+async function deleteSelectedTokens() {
+  if (selectedTokenIds.size === 0) return;
+  if (!confirm(`确认删除选中的 ${selectedTokenIds.size} 个 Token？`)) return;
+  try {
+    const r = await fetchJSON('/api/tokens/delete-batch', { method: 'POST', body: JSON.stringify({ ids: [...selectedTokenIds] }) });
+    toast(`已删除 ${r.deleted} 个`);
+    loadTokens(); loadOverview();
+  } catch (e) { toast('删除失败: ' + e.message, 'err'); }
+}
+
+async function exportTokens() {
+  try {
+    const r = await fetchJSON('/api/tokens/export', { method: 'POST' });
+    downloadJSON(r.tokens, 'tokens-export.json');
+  } catch (e) { toast('导出失败: ' + e.message, 'err'); }
+}
+
+// ================= Cookie =================
+async function loadCookies() {
+  try {
+    const list = await fetchJSON(API.cookies);
+    const tbody = $('ck-tbody');
+    tbody.innerHTML = '';
+    if (list.length === 0) { $('ck-empty').classList.remove('hidden'); return; }
+    $('ck-empty').classList.add('hidden');
+    list.forEach((p) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>
+          <div style="font-weight:500">${esc(p.name || '--')}</div>
+          <div class="muted mono" style="font-size:11px">${esc(p.id)}</div>
+        </td>
+        <td>${p.fails ?? 0}</td>
+        <td class="muted">${fmtTime(p.added_at)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn sm" onclick="refreshCookie('${esc(p.id)}')">刷新</button>
+          <button class="btn sm danger" onclick="deleteCookie('${esc(p.id)}')">删除</button>
+        </td>`;
+      tbody.appendChild(row);
+    });
+  } catch (e) { toast('加载 Cookie 失败: ' + e.message, 'err'); }
+}
+
+async function importCookie() {
+  const raw = $('ck-input').value.trim();
+  if (!raw) { toast('请先粘贴 cookie', 'err'); return; }
+  let payload;
+  try { payload = JSON.parse(raw); } catch (_) { payload = raw; }
+  try {
+    const r = await fetchJSON('/api/cookies/import', {
+      method: 'POST',
+      body: JSON.stringify({ cookie: payload, name: $('ck-name').value.trim() || undefined }),
+    });
+    const t = r.token || {};
+    toast(`导入成功，Token 名称：${t.name || '--'}`);
+    $('ck-input').value = '';
+    $('ck-name').value = '';
+    loadCookies(); loadTokens(); loadOverview();
+  } catch (e) {
+    toast('导入失败: ' + e.message, 'err');
+  }
+}
+
+async function refreshCookie(id) {
+  try {
+    const r = await fetchJSON(`${API.cookies}/${id}/refresh`, { method: 'POST' });
+    toast(`刷新成功：${r.token?.name || '--'}`);
+    loadCookies(); loadTokens(); loadOverview();
+  } catch (e) { toast('刷新失败: ' + e.message, 'err'); }
+}
+
+async function deleteCookie(id) {
+  if (!confirm('确认删除该 Cookie？关联 Token 将停止自动刷新')) return;
+  try {
+    await fetchJSON(`${API.cookies}/${id}`, { method: 'DELETE' });
+    toast('已删除');
+    loadCookies(); loadTokens(); loadOverview();
+  } catch (e) { toast('删除失败: ' + e.message, 'err'); }
+}
+
+async function exportCookies() {
+  try {
+    const r = await fetchJSON('/api/tokens/export-cookies', { method: 'POST' });
+    downloadJSON(r.cookies, 'cookies-export.json');
+  } catch (e) { toast('导出失败: ' + e.message, 'err'); }
+}
+
+// ================= 日志 =================
+let logPage = 1;
+const LOG_PAGE_SIZE = 15;
+
+async function loadLogs(page) {
+  logPage = page || 1;
+  const status = $('lg-status').value;
+  try {
+    const stats = await fetchJSON(API.logStats);
+    $('lg-total').textContent = stats.total ?? 0;
+    $('lg-success').textContent = stats.success ?? 0;
+    $('lg-error').textContent = stats.error ?? 0;
+    $('lg-avg').textContent = stats.avg_duration_ms != null ? durationStr(stats.avg_duration_ms) : '--';
+    const qs = new URLSearchParams({ page: logPage, per_page: LOG_PAGE_SIZE });
+    if (status) qs.set('status', status);
+    const data = await fetchJSON(API.logs + '?' + qs.toString());
+    const tbody = $('lg-tbody');
+    tbody.innerHTML = '';
+    if (data.logs.length === 0) { $('lg-empty').classList.remove('hidden'); }
+    else $('lg-empty').classList.add('hidden');
+    data.logs.forEach((l) => {
+      const statusCode = l.status ?? 0;
+      const cls = statusCode === 0 ? 'gray' : String(statusCode).startsWith('2') ? 'green' : String(statusCode).startsWith('4') ? 'amber' : 'red';
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td class="muted mono" style="white-space:nowrap">${fmtTime(l.time)}</td>
+        <td><span class="badge blue">${esc(l.method || '')}</span></td>
+        <td class="mono">${esc(l.path || '')}</td>
+        <td class="muted">${esc(l.model || '--')}</td>
+        <td><span class="badge ${cls}">${statusCode === 0 ? '进行中' : statusCode}</span></td>
+        <td class="muted">${durationStr(l.duration_ms)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn sm" onclick="showLogDetail('${esc(l.id)}')">查看</button>
+        </td>`;
+      tbody.appendChild(row);
+    });
+    // pager
+    const totalPages = Math.max(1, Math.ceil(data.total / LOG_PAGE_SIZE));
+    $('lg-pager').innerHTML = `
+      <button class="btn sm" onclick="loadLogs(${logPage - 1})" ${logPage <= 1 ? 'disabled' : ''}>上一页</button>
+      <span>第 ${data.page} / ${totalPages} 页 · 共 ${data.total} 条</span>
+      <button class="btn sm" onclick="loadLogs(${logPage + 1})" ${logPage >= totalPages ? 'disabled' : ''}>下一页</button>`;
+  } catch (e) { toast('加载日志失败: ' + e.message, 'err'); }
+}
+
+async function showLogDetail(id) {
+  try {
+    const l = await fetchJSON(`${API.logs}/${id}`);
+    let detail = '';
+    if (l.payload_preview) detail += '--- Request ---\n' + l.payload_preview + '\n\n';
+    if (l.response_preview) detail += '--- Response ---\n' + l.response_preview + '\n\n';
+    if (l.error) detail += '--- Error ---\n' + l.error + '\n';
+    if (!detail) detail = '无更多详情';
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask';
+    mask.innerHTML = `<div class="modal">
+      <h3>日志详情 <span class="muted" style="font-size:12px">${esc(l.id)}</span></h3>
+      <div class="kv"><span>请求</span><span class="mono">${esc(l.method)} ${esc(l.path)}</span></div>
+      <div class="kv"><span>状态 / 耗时</span><span>${l.status ?? 0} · ${durationStr(l.duration_ms)}</span></div>
+      <div class="log-detail">${esc(detail)}</div>
+      <div class="form-actions"><button class="btn" onclick="this.closest('.modal-mask').remove()">关闭</button></div>
+    </div>`;
+    document.body.appendChild(mask);
+    mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
+  } catch (e) { toast('获取详情失败: ' + e.message, 'err'); }
+}
+
+// ---------- 下载 ----------
+function downloadJSON(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- 初始化 ----------
+loadOverview();
+</script>
+</body>
+</html>
