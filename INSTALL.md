@@ -1,6 +1,6 @@
 # 安装与运行
 
-本项目由 FastAPI 后端和 React + Vite 前端组成。推荐在 Windows、macOS 或 Linux 上使用 Python 3.10+ 与 Node.js 18+ 运行。
+本项目由 FastAPI 后端和 React + Vite 前端组成。推荐在 Windows、macOS 或 Linux 上使用 Python 3.10+ 与 Node.js 20.19+（或 22.12+）运行；推荐 Node.js 22 LTS。
 
 ## 1. 获取代码
 
@@ -23,15 +23,59 @@ Copy-Item config/refresh_profiles.example.json config/refresh_profiles.json
 
 也可以跳过此步骤，在应用启动后通过“设置”页面导入 Cookie 或 Token、配置代理和外部 OpenAI 兼容 API。
 
+### 代理连接方式
+
+启动后在「设置」中选择“代理连接方式”：
+
+| 连接方式 | 路由 |
+| --- | --- |
+| 关闭代理 | 本机 -> 目标 |
+| 仅本地 HTTP 代理 | 本机 -> 本地 HTTP 代理 -> 目标 |
+| 本地 HTTP -> SOCKS5 链式连接（推荐） | 本机 -> 本地 HTTP 代理 -> SOCKS5 上游 -> 目标 |
+| 直接连接 SOCKS5（高级） | 本机 -> SOCKS5 上游 -> 目标 |
+
+“直接连接 SOCKS5（高级）”只适用于当前网络可以直接访问 SOCKS5 上游的情况。若 711Proxy 必须先通过本地 VPN / HTTP 代理访问，应选择链式模式，而不是直接 SOCKS5。
+
+### 配置本地 HTTP -> SOCKS5 链式代理（推荐）
+
+1. 在“代理连接方式”中选择“本地 HTTP -> SOCKS5 链式连接（推荐）”。
+2. 填写本地 VPN 提供的 HTTP 代理，例如 `http://127.0.0.1:7890`。
+3. 填写 711Proxy SOCKS5 地址，例如 `socks5://user:pass@host:port`。
+4. 保存配置并点击测试。
+
+保存后链路为：
+
+```text
+本机 -> 本地 HTTP 代理 -> 711 SOCKS5 -> 目标
+```
+
+链式模式会经本地 HTTP 代理 CONNECT 到 711 SOCKS5，不需要开启“直接连接 SOCKS5（高级）”。SOCKS5 地址中的账号密码不会由配置读取接口回显；使用 `socks5h://` 可让 DNS 也通过 SOCKS5 上游解析。用户名或密码中的 `@`、`:`、`/`、`?`、`#`、`%` 必须 URL 编码。
+
+### 链式代理流量统计
+
+设置页显示的“链式代理流量（本次运行）”包括上行、下行、总流量和连接数。它从后端启动时开始统计，后端重启后归零，并且只记录本地 HTTP -> SOCKS5 中继转发到的字节；仅本地 HTTP 与直接 SOCKS5 模式不计入其中。
+
+该统计用于观察本机链路，不能作为 711Proxy 的计费依据。711Proxy 的用量和余额请以其控制台为准。
+
 ## 3. Windows 一键启动
 
-安装 Python 3.10+ 和 Node.js 18+ 后，双击 `start.bat`。脚本会：
+安装 Python 3.10+ 和 Node.js 20.19+（推荐 Node.js 22 LTS）后，双击 `start.bat`。如从 GitHub 下载 ZIP，请先完整解压到本地文件夹，并确认文件名是 `start.bat` 而不是 `start.bat.txt`；不要在压缩包预览中直接运行。
 
-1. 安装后端 Python 依赖；
+脚本会：
+
+1. 在项目目录创建 `.venv` 并安装后端 Python 依赖；
 2. 安装前端依赖并构建前端；
-3. 启动服务。
+3. 启动服务，健康检查通过后自动打开浏览器。
 
-启动完成后访问 [http://127.0.0.1:8900](http://127.0.0.1:8900)。
+启动完成后会自动打开 [http://127.0.0.1:8900](http://127.0.0.1:8900)。首次下载依赖和构建前端可能需要几分钟，请保持命令窗口打开并等待日志继续输出；运行时按 `Ctrl+C` 停止服务。
+
+若双击后没有看到浏览器或窗口立即关闭，请在项目目录中打开“命令提示符”并运行：
+
+```bat
+start.bat
+```
+
+脚本会停在错误信息处。优先检查 Python 是否已加入 PATH、Node.js 是否达到所需版本，以及 `8900` 是否被其他程序占用。
 
 ## 4. 手动安装与生产运行
 
@@ -41,9 +85,8 @@ Windows PowerShell：
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r backend/requirements.txt
+.\.venv\Scripts\python -m pip install --upgrade pip
+.\.venv\Scripts\python -m pip install -r backend/requirements.txt
 ```
 
 macOS / Linux：
@@ -67,7 +110,11 @@ cd ..
 ### 启动服务
 
 ```bash
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8900
+# Windows PowerShell
+.\.venv\Scripts\python -m uvicorn backend.main:app --host 127.0.0.1 --port 8900
+
+# macOS / Linux
+.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8900
 ```
 
 浏览器打开 [http://127.0.0.1:8900](http://127.0.0.1:8900)。按 `Ctrl+C` 停止服务。
@@ -94,7 +141,7 @@ npm run dev
 
 ## 常见问题
 
-- `npm` 或 `python` 未找到：确认已安装 Node.js 18+、Python 3.10+，并重新打开终端。
+- `npm` 或 `python` 未找到：确认已安装 Node.js 20.19+（推荐 22 LTS）、Python 3.10+，并重新打开终端。
 - `8900` 端口被占用：停止现有服务，或修改 `uvicorn` 命令中的 `--port` 参数；前端开发代理也要同步调整。
 - Firefly 无法生成：在应用“设置”中导入有效 Cookie / IMS Token，并检查网络或代理配置。
 - 不要提交 `config/config.json`、`config/tokens.json` 或 `config/refresh_profiles.json`；它们可能包含账号凭证。

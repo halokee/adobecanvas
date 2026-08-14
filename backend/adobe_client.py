@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from backend.config_manager import config_manager
+from backend.config_manager import config_manager, get_requests_proxies
 from backend.token_manager import token_manager
 
 logger = logging.getLogger("local-canvas")
@@ -269,7 +269,6 @@ class AdobeClient:
     def __init__(self) -> None:
         cfg = config_manager.get_all()
         self.api_key = str(cfg.get("api_key") or "clio-playground-web").strip() or "clio-playground-web"
-        self.proxy = str(cfg.get("proxy") or "").strip() if cfg.get("use_proxy") else ""
         self.generate_timeout = int(cfg.get("generate_timeout") or 300)
         self.user_agent = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -278,7 +277,8 @@ class AdobeClient:
 
     # ---------- 基础 ----------
     def _proxies(self) -> Optional[dict]:
-        return {"http": self.proxy, "https": self.proxy} if self.proxy else None
+        # Read on every request so settings changes take effect without restart.
+        return get_requests_proxies()
 
     def _browser_headers(self) -> dict:
         return {

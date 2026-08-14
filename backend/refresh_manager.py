@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
+from backend.config_manager import get_requests_proxies
 from backend.token_manager import token_manager
 
 logger = logging.getLogger("local-canvas")
@@ -278,7 +279,8 @@ class RefreshManager:
         }
         try:
             resp = requests.post(
-                DEFAULT_REFRESH_URL, headers=headers, data=form, timeout=60
+                DEFAULT_REFRESH_URL, headers=headers, data=form, timeout=60,
+                proxies=get_requests_proxies(),
             )
         except requests.RequestException as exc:
             self._mark_fail(profile_id)

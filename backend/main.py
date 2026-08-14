@@ -15,6 +15,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import requests
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
@@ -30,7 +31,17 @@ from backend.adobe_client import (
     AuthError,
     adobe_client,
 )
-from backend.config_manager import config_manager
+from backend.config_manager import (
+    config_manager,
+    get_active_proxy,
+    get_proxy_chain_traffic,
+    get_proxy_mode,
+    get_requests_proxies,
+    proxy_mode_settings,
+    update_config_and_invalidate_proxy_chain,
+    validate_http_connect_proxy,
+    validate_socks5_proxy,
+)
 from backend.log_store import log_store
 from backend.refresh_manager import refresh_manager
 from backend.token_manager import token_manager
@@ -63,7 +74,7 @@ app.add_middleware(
 )
 
 
-_SENSITIVE_CONFIG_KEYS = {"api_key", "admin_password", "external_api_key"}
+_SENSITIVE_CONFIG_KEYS = {"api_key", "admin_password", "external_api_key", "socks5_proxy"}
 
 
 def _mask_secret(value: Any) -> str:
@@ -80,6 +91,15 @@ def _public_config(data: dict) -> dict:
     public = dict(data)
     for key in _SENSITIVE_CONFIG_KEYS:
         public.pop(key, None)
+    try:
+        local_proxy_has_credentials = urlsplit(str(data.get("proxy") or "")).username is not None
+    except ValueError:
+        local_proxy_has_credentials = False
+    if local_proxy_has_credentials:
+        public.pop("proxy", None)
+    public["proxy_configured"] = bool(str(data.get("proxy") or "").strip())
+    public["socks5_proxy_configured"] = bool(str(data.get("socks5_proxy") or "").strip())
+    public["proxy_mode"] = get_proxy_mode(data)
     return public
 
 
@@ -236,6 +256,18 @@ def _fetch_credits_balance(access_token: str, account_id: str) -> dict:
     }
 
 
+_LOCAL_PROXY_BYPASS_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+
+def _is_local_url(url: str) -> bool:
+    """Keep loopback OpenAI endpoints direct instead of proxying them back to this app."""
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        return False
+    return bool(host and host.lower() in _LOCAL_PROXY_BYPASS_HOSTS)
+
+
 def _refresh_credits_for_token_id(token_id: str) -> dict:
     token_info = token_manager.get(token_id)
     if not token_info:
@@ -257,6 +289,10 @@ class ConfigPatch(BaseModel):
     admin_password: Optional[str] = None
     use_proxy: Optional[bool] = None
     proxy: Optional[str] = None
+    use_socks5_proxy: Optional[bool] = None
+    socks5_proxy: Optional[str] = None
+    use_socks5_proxy_chain: Optional[bool] = None
+    proxy_mode: Optional[str] = None
     gpt_image_quality: Optional[str] = None
     generate_timeout: Optional[int] = None
     token_rotation_strategy: Optional[str] = None
@@ -318,9 +354,51 @@ def get_config():
     return _public_config(config_manager.get_all())
 
 
+@app.get("/api/config/proxy-traffic")
+def get_proxy_traffic():
+    """Traffic observed by the local HTTP -> SOCKS5 relay in this backend run."""
+    return get_proxy_chain_traffic()
+
+
 @app.put("/api/config")
 def update_config(patch: ConfigPatch):
-    cfg = config_manager.update(patch.model_dump(exclude_none=True))
+    values = patch.model_dump(exclude_none=True)
+    if "proxy_mode" in values:
+        try:
+            values.update(proxy_mode_settings(values.pop("proxy_mode")))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    if "socks5_proxy" in values:
+        try:
+            values["socks5_proxy"] = validate_socks5_proxy(values["socks5_proxy"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    socks5_enabled = bool(values.get("use_socks5_proxy", config_manager.get("use_socks5_proxy")))
+    socks5_url = str(values.get("socks5_proxy", config_manager.get("socks5_proxy")) or "").strip()
+    if socks5_enabled:
+        if not socks5_url:
+            raise HTTPException(status_code=400, detail="启用独立 SOCKS5 代理时必须填写代理地址")
+        try:
+            validate_socks5_proxy(socks5_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    chain_enabled = bool(values.get("use_socks5_proxy_chain", config_manager.get("use_socks5_proxy_chain")))
+    if chain_enabled:
+        local_enabled = bool(values.get("use_proxy", config_manager.get("use_proxy")))
+        local_url = str(values.get("proxy", config_manager.get("proxy")) or "").strip()
+        if not local_enabled or not local_url:
+            raise HTTPException(status_code=400, detail="启用链式代理时必须启用并填写本地 HTTP 代理")
+        if not socks5_url:
+            raise HTTPException(status_code=400, detail="启用链式代理时必须填写 SOCKS5 上游代理")
+        try:
+            validate_socks5_proxy(socks5_url)
+            validate_http_connect_proxy(local_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    cfg = update_config_and_invalidate_proxy_chain(values)
     return _public_config(cfg)
 
 
@@ -396,8 +474,7 @@ def test_channel():
         t0 = _time.time()
         try:
             # 本地地址不走代理，避免循环或错误转发
-            url_host = base_url.split("://")[-1].split(":")[0].lower()
-            is_local = url_host in ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+            is_local = _is_local_url(base_url)
             r = requests.get(base_url.rstrip("/") + "/models",
                              headers=headers, timeout=20,
                              proxies=(None if is_local else proxies))
@@ -418,17 +495,40 @@ def test_channel():
     result["external"] = external
 
     # ---- 代理 ----
-    if config_manager.get("use_proxy") and str(config_manager.get("proxy") or "").strip():
+    def _test_proxy(kind: str) -> dict:
+        try:
+            proxy_map = get_requests_proxies(kind)
+        except Exception as exc:
+            return {"ok": False, "info": f"{type(exc).__name__}: {exc}"}
+        if not proxy_map:
+            return {"ok": None, "info": "未启用"}
         t0 = _time.time()
         try:
-            r = requests.get("https://firefly-3p.ff.adobe.io/", timeout=15, proxies=proxies)
-            result["proxy"] = {
+            r = requests.get("https://firefly-3p.ff.adobe.io/", timeout=15, proxies=proxy_map)
+            return {
                 "ok": r.status_code < 500,
                 "latency_ms": int((_time.time() - t0) * 1000),
                 "info": f"HTTP {r.status_code}",
             }
         except Exception as exc:
-            result["proxy"] = {"ok": False, "info": f"{type(exc).__name__}: {exc}"}
+            return {"ok": False, "info": f"{type(exc).__name__}: {exc}"}
+
+    active_proxy_kind, _ = get_active_proxy()
+    result["local_proxy"] = _test_proxy("local")
+    if active_proxy_kind == "chain":
+        result["socks5_proxy"] = {
+            "ok": None,
+            "info": "链式代理已启用，已跳过不经过本地 HTTP 代理的 SOCKS5 直连测试",
+        }
+    else:
+        result["socks5_proxy"] = _test_proxy("socks5")
+    result["proxy_chain"] = _test_proxy("chain")
+    if active_proxy_kind == "chain":
+        result["proxy"] = result["proxy_chain"]
+    elif active_proxy_kind == "socks5":
+        result["proxy"] = result["socks5_proxy"]
+    elif active_proxy_kind == "local":
+        result["proxy"] = result["local_proxy"]
     else:
         result["proxy"] = {"ok": None, "info": "未启用"}
 
@@ -736,8 +836,7 @@ def _external_models() -> list[str]:
         api_key = str(config_manager.get("external_api_key") or "").strip()
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         # 本地地址不走代理
-        url_host = base_url.split("://")[-1].split(":")[0].lower()
-        is_local = url_host in ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+        is_local = _is_local_url(base_url)
         proxies = adobe_client._proxies() if not is_local else None
         resp = requests.get(base_url.rstrip("/") + "/models",
                             headers=headers, timeout=30, proxies=proxies)
@@ -864,8 +963,7 @@ def _forward_external(path: str, body: dict):
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         # 本地地址不走代理
-        url_host = base_url.split("://")[-1].split(":")[0].lower()
-        is_local = url_host in ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+        is_local = _is_local_url(base_url)
         proxies = adobe_client._proxies() if not is_local else None
         resp = _req.post(base_url.rstrip("/") + path, json=body,
                          headers=headers, timeout=int(config_manager.get("generate_timeout", 300)),
@@ -901,8 +999,7 @@ def _external_headers():
 
 
 def _http_proxies(url: str):
-    host = url.split("://")[-1].split(":")[0].lower()
-    if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+    if _is_local_url(url):
         return None
     return adobe_client._proxies()
 
@@ -1214,9 +1311,29 @@ def openai_audio_speech(body: dict):
     }
     selected = voice_map.get(voice, voice)
     rate = f"{int(round((speed - 1.0) * 100)):+d}%"
+    proxy_kind, proxy_url = get_active_proxy()
+    socks_connector_cls = None
+    socks_url = ""
+    remote_dns = False
+    if proxy_url:
+        if proxy_kind in {"socks5", "chain"}:
+            try:
+                from aiohttp_socks import ProxyConnector
+            except ImportError:
+                raise HTTPException(status_code=501, detail="SOCKS5 代理需要安装 aiohttp-socks")
+            socks_connector_cls = ProxyConnector
+            socks_url = proxy_url
+            remote_dns = socks_url.lower().startswith("socks5h://")
+            if remote_dns:
+                socks_url = "socks5://" + socks_url[len("socks5h://"):]
 
     async def _synth():
-        communicate = edge_tts.Communicate(text, selected, rate=rate)
+        edge_tts_options: dict[str, Any] = {}
+        if socks_connector_cls:
+            edge_tts_options["connector"] = socks_connector_cls.from_url(socks_url, rdns=remote_dns)
+        elif proxy_url:
+            edge_tts_options["proxy"] = proxy_url
+        communicate = edge_tts.Communicate(text, selected, rate=rate, **edge_tts_options)
         buf = bytearray()
         async for chunk in communicate.stream():
             if chunk.get("type") == "audio":

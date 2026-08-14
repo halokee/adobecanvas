@@ -34,21 +34,44 @@
 
 ### 方式一：一键启动（Windows）
 
-双击 `start.bat`，首次运行会自动安装依赖并构建前端，然后自动打开 `http://localhost:8900`。
+先安装 Python 3.10+ 与 Node.js 20.19+（推荐 Node.js 22 LTS）。从 GitHub 下载 ZIP 时，请先完整解压到本地文件夹，确认文件名是 `start.bat` 而不是 `start.bat.txt`，再双击它；不要在压缩包预览中直接运行。
+
+脚本会在项目目录创建 `.venv`、安装缺失的 Python/前端依赖、构建前端，并在服务健康检查通过后自动打开 `http://127.0.0.1:8900`。首次下载依赖和构建可能需要几分钟，请保持命令窗口打开并等待日志继续输出；运行时按 `Ctrl+C` 停止服务。
+
+若双击后没有看到浏览器或窗口立即关闭，请在项目目录的命令提示符中运行：
+
+```bat
+start.bat
+```
+
+新版脚本会保留错误窗口并显示具体原因。常见原因是 Python 未加入 PATH、Node.js 版本过低，或 `8900` 端口已被其他程序占用。
 
 ### 方式二：手动
 
-```bash
-# 1. 后端
-pip install -r backend/requirements.txt
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8900
+Windows PowerShell：
 
-# 2. 前端（开发模式，另开终端）
+终端 1，启动后端：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r backend/requirements.txt
+.\.venv\Scripts\python -m uvicorn backend.main:app --host 127.0.0.1 --port 8900
+```
+
+终端 2，前端开发模式：
+
+```powershell
 cd web
-npm install
-npm run dev        # http://localhost:3000
-# 或构建后由后端直接托管
-npm run build      # 后端会托管 web/dist
+npm ci
+npm run dev # http://localhost:3000
+```
+
+生产方式先构建前端，再运行终端 1 中的后端命令：
+
+```powershell
+cd web
+npm ci
+npm run build
 ```
 
 ## 使用指南
@@ -100,8 +123,11 @@ adobe_token=xxx; deployment_id=yyy; ...
 ```jsonc
 {
   "api_key": "",                  // Firefly x-api-key（默认 clio-playground-web）
-  "use_proxy": false,             // 是否走代理
-  "proxy": "",                    // 代理地址，如 http://127.0.0.1:7890
+  "use_proxy": false,              // 兼容字段：仅本地 HTTP 或链式连接时为 true
+  "proxy": "",                     // 本地 HTTP 代理，如 http://127.0.0.1:7890
+  "use_socks5_proxy": false,       // 兼容字段：直接连接 SOCKS5（高级）时为 true
+  "socks5_proxy": "",              // SOCKS5 上游，如 socks5://user:pass@host:port
+  "use_socks5_proxy_chain": false, // 兼容字段：本地 HTTP -> SOCKS5 链式连接时为 true
   "gpt_image_quality": "medium",  // 默认图片质量 low|medium|high
   "generate_timeout": 300,        // 生成超时（秒）
   "token_rotation_strategy": "round_robin",  // 轮换策略 round_robin|random
@@ -110,6 +136,39 @@ adobe_token=xxx; deployment_id=yyy; ...
   "default_channel": "firefly"    // 默认通道 firefly|external
 }
 ```
+
+### 代理连接方式
+
+在「设置」中选择一种代理连接方式。界面会把选择映射为兼容旧配置的三个开关；`config/config.json` 不会持久化 `proxy_mode` 字段。
+
+| 连接方式 | 实际链路 | 适用场景 | 兼容字段组合 |
+| --- | --- | --- | --- |
+| 关闭代理 | 本机 -> 目标 | 不需要代理 | 三个开关均为 `false` |
+| 仅本地 HTTP 代理 | 本机 -> 本地 HTTP 代理 -> 目标 | 只需要本地 VPN / HTTP 代理 | `use_proxy=true` |
+| 本地 HTTP -> SOCKS5 链式连接（推荐） | 本机 -> 本地 HTTP 代理 -> SOCKS5 上游 -> 目标 | SOCKS5 上游必须先通过本地 VPN / HTTP 代理访问，例如 711Proxy | `use_proxy=true`、`use_socks5_proxy_chain=true` |
+| 直接连接 SOCKS5（高级） | 本机 -> SOCKS5 上游 -> 目标 | 当前网络能直接访问 SOCKS5 上游 | `use_socks5_proxy=true` |
+
+链式模式需要同时填写本地 HTTP 代理和 SOCKS5 上游地址。例如：
+
+```text
+本机 -> http://127.0.0.1:7890 -> socks5://user:pass@711-host:port -> 目标服务
+```
+
+后端会创建一个仅监听 `127.0.0.1` 的临时 SOCKS5 中继：先经本地 HTTP 代理使用 CONNECT 连接上游，再透明转发 SOCKS5 认证和目标请求。选择链式模式时不需要、也不会启用“直接连接 SOCKS5（高级）”；后者只保留给无需本地 HTTP 第一跳的网络环境。
+
+SOCKS5 上游地址格式为：
+
+```text
+socks5://user:pass@host:port
+```
+
+若希望 DNS 也由 SOCKS5 上游解析，可使用 `socks5h://`。用户名或密码中含有 `@`、`:`、`/`、`?`、`#` 或 `%` 时，需要进行 URL 百分号编码。SOCKS5 地址含有账号密码，配置读取接口不会回显该地址。
+
+### 链式代理流量统计
+
+选择链式模式后，「设置」会显示“链式代理流量（本次运行）”，包括上行、下行、总流量、累计连接数和当前活跃连接数。计数从后端启动时开始，并在后端重启后归零；仅统计本地 HTTP -> SOCKS5 中继实际转发到的字节，直接 SOCKS5 和仅本地 HTTP 模式不会产生这组统计。
+
+该数字用于本地运行观测，不是 711Proxy 的计费或余额数据。服务商按其自身规则统计，可能与本地中继观测值不同，因此请以 711Proxy 控制台为准。
 
 ## OpenAI 兼容 API
 

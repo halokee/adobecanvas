@@ -4,6 +4,11 @@
   "admin_password": "",
   "use_proxy": false,
   "proxy": "",
+
+  "use_socks5_proxy": false,
+  "socks5_proxy": "",
+  "use_socks5_proxy_chain": false,
+
   "gpt_image_quality": "low",
   "generate_timeout": 300,
   "retry_enabled": true,
