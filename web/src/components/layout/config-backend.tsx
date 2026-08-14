@@ -96,6 +96,18 @@ type LogStats = {
     avg_duration_ms: number;
 };
 
+type ProxyMode = "off" | "local" | "chain" | "socks5";
+
+type ProxyTraffic = {
+    upload_bytes: number;
+    download_bytes: number;
+    total_bytes: number;
+    connections: number;
+    active_connections: number;
+    started_at: number;
+    running: boolean;
+};
+
 // ---------------- helpers ----------------
 
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
@@ -135,10 +147,42 @@ function statusColor(status: string) {
     return "default";
 }
 
+function getProxyMode(config: BackendConfig | null): ProxyMode {
+    const mode = config?.proxy_mode;
+    if (mode === "off" || mode === "local" || mode === "chain" || mode === "socks5") {
+        return mode;
+    }
+    if (config?.use_socks5_proxy_chain) return "chain";
+    if (config?.use_socks5_proxy) return "socks5";
+    if (config?.use_proxy) return "local";
+    return "off";
+}
+
+function proxyModeSettings(mode: ProxyMode) {
+    return {
+        use_proxy: mode === "local" || mode === "chain",
+        use_socks5_proxy: mode === "socks5",
+        use_socks5_proxy_chain: mode === "chain",
+    };
+}
+
+function formatTrafficBytes(bytes: number) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+    return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
 // ---------------- component ----------------
 
 export function ConfigBackend({ active }: { active?: boolean }) {
     const { message, modal } = App.useApp();
+    const [configForm] = Form.useForm();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const channels = useConfigStore((state) => state.config.channels);
     const [backendModels, setBackendModels] = useState<BackendModels | null>(null);
@@ -149,6 +193,7 @@ export function ConfigBackend({ active }: { active?: boolean }) {
     const [cookies, setCookies] = useState<CookieProfile[]>([]);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [logStats, setLogStats] = useState<LogStats | null>(null);
+    const [proxyTraffic, setProxyTraffic] = useState<ProxyTraffic | null>(null);
     const [totalCredits, setTotalCredits] = useState<{ total_available: number; total_used: number }>({ total_available: 0, total_used: 0 });
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<Record<string, unknown> | null>(null);
@@ -160,6 +205,20 @@ export function ConfigBackend({ active }: { active?: boolean }) {
     const [refreshing, setRefreshing] = useState<string | null>(null);
     const [selectedTokenIds, setSelectedTokenIds] = useState<Key[]>([]);
     const [selectedCookieIds, setSelectedCookieIds] = useState<Key[]>([]);
+    const selectedProxyMode = (Form.useWatch("proxy_mode", configForm) as ProxyMode | undefined) ?? getProxyMode(config);
+    const needsLocalProxy = selectedProxyMode === "local" || selectedProxyMode === "chain";
+    const needsSocks5Proxy = selectedProxyMode === "chain" || selectedProxyMode === "socks5";
+    const hasSavedLocalProxy = Boolean(config?.proxy_configured || config?.proxy);
+    const hasSavedSocks5Proxy = Boolean(config?.socks5_proxy_configured);
+
+    const loadProxyTraffic = useCallback(async () => {
+        try {
+            setProxyTraffic(await fetchJSON<ProxyTraffic>("/api/config/proxy-traffic"));
+        } catch {
+            // Older backends do not expose chain-relay counters.
+            setProxyTraffic(null);
+        }
+    }, []);
 
     const load = useCallback(async () => {
         try {
@@ -185,9 +244,13 @@ export function ConfigBackend({ active }: { active?: boolean }) {
     useEffect(() => {
         if (!active) return;
         void load();
-        const timer = setInterval(() => void load(), 15000);
+        void loadProxyTraffic();
+        const timer = setInterval(() => {
+            void load();
+            void loadProxyTraffic();
+        }, 15000);
         return () => clearInterval(timer);
-    }, [active, load]);
+    }, [active, load, loadProxyTraffic]);
 
     useEffect(() => {
         if (!active) return;
@@ -202,6 +265,7 @@ export function ConfigBackend({ active }: { active?: boolean }) {
         try {
             const result = await fetchJSON<Record<string, unknown>>("/api/config/test-channel", { method: "POST" });
             setTestResult(result);
+            await loadProxyTraffic();
             message.success("通道测试完成");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "测试失败");
@@ -214,22 +278,106 @@ export function ConfigBackend({ active }: { active?: boolean }) {
         setSaving(true);
         try {
             const patch = { ...values };
+            const proxyMode = patch.proxy_mode as ProxyMode;
+            if (["off", "local", "chain", "socks5"].includes(proxyMode)) {
+                Object.assign(patch, proxyModeSettings(proxyMode));
+            } else {
+                delete patch.proxy_mode;
+            }
             // Sensitive values are intentionally never returned by the backend.
             // Keeping an empty field out of the patch preserves an existing key.
-            if (typeof patch.external_api_key === "string" && !patch.external_api_key.trim()) {
-                delete patch.external_api_key;
+            for (const key of ["external_api_key", "socks5_proxy"]) {
+                if (typeof patch[key] === "string" && !patch[key].trim()) {
+                    delete patch[key];
+                }
+            }
+            if (config?.proxy_configured && !config.proxy && typeof patch.proxy === "string" && !patch.proxy.trim()) {
+                delete patch.proxy;
             }
             const updated = await fetchJSON<BackendConfig>("/api/config", {
                 method: "PUT",
                 body: JSON.stringify(patch),
             });
             setConfig(updated);
+            configForm.setFieldsValue({ proxy_mode: getProxyMode(updated) });
             message.success("配置已保存");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "保存失败");
         } finally {
             setSaving(false);
         }
+    };
+
+    const confirmClearSocks5Proxy = () => {
+        modal.confirm({
+            title: "清除 SOCKS5 网络代理？",
+            content: "这会删除已保存的代理地址和账号密码。",
+            okText: "清除",
+            okButtonProps: { danger: true },
+            onOk: async () => {
+                setSaving(true);
+                try {
+                    const previousMode = getProxyMode(config);
+                    const nextMode: ProxyMode = previousMode === "chain" || previousMode === "socks5"
+                        ? (config?.use_proxy && config?.proxy_configured ? "local" : "off")
+                        : previousMode;
+                    const updated = await fetchJSON<BackendConfig>("/api/config", {
+                        method: "PUT",
+                        body: JSON.stringify({
+                            proxy_mode: nextMode,
+                            ...proxyModeSettings(nextMode),
+                            socks5_proxy: "",
+                        }),
+                    });
+                    setConfig(updated);
+                    configForm.setFieldsValue({
+                        proxy_mode: nextMode,
+                        socks5_proxy: "",
+                    });
+                    message.success("SOCKS5 网络代理已清除");
+                } catch (error) {
+                    message.error(error instanceof Error ? error.message : "清除失败");
+                    throw error;
+                } finally {
+                    setSaving(false);
+                }
+            },
+        });
+    };
+
+    const confirmClearLocalProxy = () => {
+        modal.confirm({
+            title: "清除本地 HTTP 代理？",
+            content: "这会删除已保存的本地代理地址，并关闭链式代理。",
+            okText: "清除",
+            okButtonProps: { danger: true },
+            onOk: async () => {
+                setSaving(true);
+                try {
+                    const previousMode = getProxyMode(config);
+                    const nextMode: ProxyMode = previousMode === "local" || previousMode === "chain" ? "off" : previousMode;
+                    const updated = await fetchJSON<BackendConfig>("/api/config", {
+                        method: "PUT",
+                        body: JSON.stringify({
+                            proxy_mode: nextMode,
+                            ...proxyModeSettings(nextMode),
+                            proxy: "",
+                        }),
+                    });
+                    setConfig(updated);
+                    configForm.setFieldsValue({
+                        proxy_mode: nextMode,
+                        proxy: "",
+                    });
+                    message.success("本地 HTTP 代理已清除");
+                } catch (error) {
+                    message.error(error instanceof Error ? error.message : "清除失败");
+                    throw error;
+                } finally {
+                    setSaving(false);
+                }
+            },
+        });
     };
 
     const addToken = async (values: { value: string; name?: string }) => {
@@ -519,7 +667,7 @@ export function ConfigBackend({ active }: { active?: boolean }) {
                         <Button icon={<Wifi className="size-4" />} loading={testing} onClick={() => void testChannel()}>
                             测试通道
                         </Button>
-                        <Button icon={<RefreshCw className="size-4" />} onClick={() => void load()}>
+                        <Button icon={<RefreshCw className="size-4" />} onClick={() => { void load(); void loadProxyTraffic(); }}>
                             刷新
                         </Button>
                     </div>
@@ -534,6 +682,7 @@ export function ConfigBackend({ active }: { active?: boolean }) {
                         extra={logStats ? `成功 ${logStats.success} / 失败 ${logStats.error}` : undefined}
                     />
                 </div>
+                {proxyTraffic ? <ProxyTrafficSummary traffic={proxyTraffic} onRefresh={loadProxyTraffic} /> : null}
                 {testResult ? <TestResultDetail result={testResult} /> : null}
             </section>
 
@@ -545,11 +694,12 @@ export function ConfigBackend({ active }: { active?: boolean }) {
                 </div>
                 {config ? (
                     <Form
+                        form={configForm}
                         layout="vertical"
                         requiredMark={false}
                         initialValues={{
                             default_channel: config.default_channel || "firefly",
-                            use_proxy: Boolean(config.use_proxy),
+                            proxy_mode: getProxyMode(config),
                             proxy: config.proxy || "",
                             gpt_image_quality: config.gpt_image_quality || "medium",
                             generate_timeout: config.generate_timeout ?? 300,
@@ -575,12 +725,65 @@ export function ConfigBackend({ active }: { active?: boolean }) {
                                     ]}
                                 />
                             </Form.Item>
-                            <Form.Item label="使用代理" name="use_proxy" valuePropName="checked" className="mb-3">
-                                <Switch />
+                            <Form.Item
+                                label="代理连接方式"
+                                name="proxy_mode"
+                                extra={
+                                    selectedProxyMode === "chain"
+                                        ? "本机 → 本地 HTTP 代理 → SOCKS5 上游 → 目标"
+                                        : selectedProxyMode === "socks5"
+                                          ? "绕过本地 HTTP 代理，仅适用于能够直接连接 SOCKS5 的网络。"
+                                          : selectedProxyMode === "local"
+                                            ? "仅通过本地 HTTP 代理连接目标。"
+                                            : "不使用代理。"
+                                }
+                                className="mb-3"
+                            >
+                                <Select
+                                    options={[
+                                        { value: "off", label: "关闭代理" },
+                                        { value: "local", label: "仅本地 HTTP 代理" },
+                                        { value: "chain", label: "本地 HTTP → SOCKS5 链式连接（推荐）" },
+                                        { value: "socks5", label: "直接连接 SOCKS5（高级）" },
+                                    ]}
+                                />
                             </Form.Item>
-                            <Form.Item label="代理地址" name="proxy" className="mb-3">
-                                <Input placeholder="http://127.0.0.1:7897" />
-                            </Form.Item>
+                            {needsLocalProxy ? (
+                                <Form.Item
+                                    label="本地 HTTP 代理地址"
+                                    name="proxy"
+                                    rules={hasSavedLocalProxy ? undefined : [{ required: true, message: "请填写本地 HTTP 代理地址" }]}
+                                    extra={config.proxy_configured && !config.proxy ? (
+                                        <Space size={8}>
+                                            <span>已保存；留空则保持现有地址。</span>
+                                            <Button type="link" danger size="small" onClick={confirmClearLocalProxy}>
+                                                清除已保存地址
+                                            </Button>
+                                        </Space>
+                                    ) : undefined}
+                                    className="mb-3"
+                                >
+                                    <Input placeholder="http://127.0.0.1:7897" />
+                                </Form.Item>
+                            ) : null}
+                            {needsSocks5Proxy ? (
+                                <Form.Item
+                                    label="SOCKS5 上游代理"
+                                    name="socks5_proxy"
+                                    rules={hasSavedSocks5Proxy ? undefined : [{ required: true, message: "请填写 SOCKS5 上游代理地址" }]}
+                                    extra={config.socks5_proxy_configured ? (
+                                        <Space size={8}>
+                                            <span>已保存；留空则保持现有地址。</span>
+                                            <Button type="link" danger size="small" onClick={confirmClearSocks5Proxy}>
+                                                清除已保存地址
+                                            </Button>
+                                        </Space>
+                                    ) : undefined}
+                                    className="mb-3"
+                                >
+                                    <Input.Password placeholder="socks5://user:pass@host:port" autoComplete="off" />
+                                </Form.Item>
+                            ) : null}
                             <Form.Item label="图片质量" name="gpt_image_quality" className="mb-3">
                                 <Select
                                     options={[
@@ -842,6 +1045,47 @@ function OverviewCard({ label, value, status = "default", extra }: { label: stri
     );
 }
 
+function ProxyTrafficSummary({ traffic, onRefresh }: { traffic: ProxyTraffic; onRefresh: () => void }) {
+    return (
+        <div className="mt-3 border-t border-stone-200 pt-3 dark:border-stone-800">
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs font-medium">
+                    <span className={`size-2 rounded-full ${traffic.running ? "bg-green-500" : "bg-stone-400"}`} />
+                    链式代理流量（本次运行）
+                    <span className="font-normal text-stone-500">{traffic.running ? "运行中" : "待请求"}</span>
+                </div>
+                <Button
+                    type="text"
+                    size="small"
+                    icon={<RefreshCw className="size-3.5" />}
+                    title="刷新链式代理流量"
+                    aria-label="刷新链式代理流量"
+                    onClick={onRefresh}
+                />
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
+                <TrafficMetric label="总流量" value={formatTrafficBytes(traffic.total_bytes)} />
+                <TrafficMetric label="上行" value={formatTrafficBytes(traffic.upload_bytes)} />
+                <TrafficMetric label="下行" value={formatTrafficBytes(traffic.download_bytes)} />
+                <TrafficMetric label="连接" value={String(traffic.connections)} extra={`活跃 ${traffic.active_connections}`} />
+            </div>
+            <div className="mt-2 text-xs text-stone-500">
+                自 {formatTime(traffic.started_at)} 开始，仅统计本地 HTTP → SOCKS5 链式转发的流量。
+            </div>
+        </div>
+    );
+}
+
+function TrafficMetric({ label, value, extra }: { label: string; value: string; extra?: string }) {
+    return (
+        <div>
+            <div className="text-stone-500">{label}</div>
+            <div className="mt-0.5 font-semibold tabular-nums">{value}</div>
+            {extra ? <div className="text-stone-500">{extra}</div> : null}
+        </div>
+    );
+}
+
 interface BatchImportResult {
     total: number;
     ok: unknown[];
@@ -966,7 +1210,9 @@ function BatchImportModal({
 function TestResultDetail({ result }: { result: Record<string, unknown> }) {
     const firefly = result.firefly as Record<string, unknown> | undefined;
     const external = result.external as Record<string, unknown> | undefined;
-    const proxy = result.proxy as Record<string, unknown> | undefined;
+    const localProxy = result.local_proxy as Record<string, unknown> | undefined;
+    const socks5Proxy = result.socks5_proxy as Record<string, unknown> | undefined;
+    const proxyChain = result.proxy_chain as Record<string, unknown> | undefined;
     const renderItem = (title: string, item: Record<string, unknown> | undefined, okKey: string) => {
         if (!item) return null;
         const ok = item[okKey];
@@ -984,7 +1230,9 @@ function TestResultDetail({ result }: { result: Record<string, unknown> }) {
         <div className="mt-3 space-y-2">
             {renderItem("Firefly 通道", firefly, "ok")}
             {renderItem("外部通道", external, "ok")}
-            {renderItem("代理", proxy, "ok")}
+            {renderItem("本地 HTTP 代理", localProxy, "ok")}
+            {renderItem("直接 SOCKS5（高级）", socks5Proxy, "ok")}
+            {renderItem("本地 HTTP → SOCKS5 链式代理", proxyChain, "ok")}
         </div>
     );
 }
