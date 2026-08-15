@@ -4,6 +4,11 @@
 
 + [新增] 提示词来源新增 Freestylefly GPT Image 2 内置来源。
 
+## v1.0.2 - 2026-08-15
+
++ [新增] 增加 macOS 双击启动脚本 `start.command`，自动创建 Python 环境、安装依赖、构建前端并启动服务。
++ [文档] 补充 Windows、macOS 的一键启动与手动启动说明。
+
 ## v1.0.1 - 2026-08-15
 
 + [新增] 支持本地 HTTP -> SOCKS5 链式代理、独立 SOCKS5 模式与本次运行流量统计。

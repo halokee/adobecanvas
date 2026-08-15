@@ -77,7 +77,27 @@ start.bat
 
 脚本会停在错误信息处。优先检查 Python 是否已加入 PATH、Node.js 是否达到所需版本，以及 `8900` 是否被其他程序占用。
 
-## 4. 手动安装与生产运行
+## 4. macOS 一键启动
+
+安装 Python 3.10+ 和 Node.js 20.19+（推荐 Node.js 22 LTS）后，在 Finder 中双击 `start.command`。脚本会始终以自身所在的项目目录启动；首次运行会自动创建 `.venv`、安装 Python 与前端依赖、构建前端，并在服务健康检查通过后打开 [http://127.0.0.1:8900](http://127.0.0.1:8900)。
+
+推荐从 GitHub Releases 下载名称包含 `macos` 的发布压缩包；它会保留 `start.command` 的执行权限。通过 `git clone` 获取代码也会保留该权限。若使用 GitHub 的“Source code (zip)”下载后 Finder 提示脚本没有执行权限，在项目目录打开“终端”运行一次：
+
+```bash
+chmod +x start.command
+```
+
+首次被 macOS Gatekeeper 拦截时，在 `start.command` 上按住 Control 单击，选择“打开”后确认。服务运行期间请保持 Terminal 窗口打开，按 `Ctrl+C` 停止服务；依赖、版本、端口或构建错误都会保留在该窗口中，不会一闪而过。
+
+也可以在终端中手动运行启动脚本：
+
+```bash
+./start.command
+```
+
+## 5. 手动安装与生产运行
+
+不使用一键脚本时，按以下步骤手动安装并启动。Windows 使用 PowerShell；macOS / Linux 使用 Terminal。
 
 ### 后端
 
@@ -119,7 +139,7 @@ cd ..
 
 浏览器打开 [http://127.0.0.1:8900](http://127.0.0.1:8900)。按 `Ctrl+C` 停止服务。
 
-## 5. 前端开发模式
+## 6. 前端开发模式
 
 先在一个终端启动后端：
 
