@@ -46,7 +46,25 @@ start.bat
 
 新版脚本会保留错误窗口并显示具体原因。常见原因是 Python 未加入 PATH、Node.js 版本过低，或 `8900` 端口已被其他程序占用。
 
-### 方式二：手动
+### 方式二：一键启动（macOS）
+
+安装 Python 3.10+ 与 Node.js 20.19+（推荐 Node.js 22 LTS）后，在 Finder 中双击 `start.command`。它会自动创建 `.venv`、安装 Python/前端依赖、构建前端，并在服务就绪后打开 `http://127.0.0.1:8900`。
+
+推荐从 GitHub Releases 下载名称包含 `macos` 的发布压缩包；它会保留 `start.command` 的执行权限。通过 `git clone` 获取代码也会保留该权限。若使用 GitHub 的“Source code (zip)”下载后 Finder 提示脚本没有执行权限，在项目目录打开“终端”运行一次：
+
+```bash
+chmod +x start.command
+```
+
+首次被 macOS Gatekeeper 拦截时，在 `start.command` 上按住 Control 单击并选择“打开”。服务运行期间 Terminal 会保持打开；依赖、版本、端口或构建异常都会显示在窗口中，不会一闪而过。需要从终端启动时运行：
+
+```bash
+./start.command
+```
+
+### 方式三：手动启动
+
+不使用一键脚本时，可手动安装依赖、构建前端并启动后端。
 
 Windows PowerShell：
 
@@ -72,6 +90,21 @@ npm run dev # http://localhost:3000
 cd web
 npm ci
 npm run build
+```
+
+macOS / Linux：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements.txt
+
+cd web
+npm ci
+npm run build
+cd ..
+
+.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8900
 ```
 
 ## 使用指南
@@ -207,7 +240,8 @@ curl -X POST http://127.0.0.1:8900/v1/videos/generations \
 │       └── store/     # 状态管理（撤销重做）
 ├── config/            # config.json + tokens.json（与 adobe2api 同格式）
 ├── outputs/           # 生成结果
-└── start.bat          # 一键启动
+├── start.bat          # Windows 一键启动
+└── start.command      # macOS 一键启动
 ```
 
 ## 免责声明
