@@ -122,7 +122,7 @@ python -m pip install -r backend/requirements.txt
 
 ```bash
 cd web
-npm ci
+npm ci --allow-remote=all
 npm run build
 cd ..
 ```
@@ -151,7 +151,7 @@ python -m uvicorn backend.main:app --host 127.0.0.1 --port 8900
 
 ```bash
 cd web
-npm ci
+npm ci --allow-remote=all
 npm run dev
 ```
 

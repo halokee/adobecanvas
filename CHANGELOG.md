@@ -4,6 +4,10 @@
 
 + [新增] 提示词来源新增 Freestylefly GPT Image 2 内置来源。
 
+## v1.0.4 - 2026-08-17
+
++ [Fixed] Launchers now pass `--allow-remote=all` to npm so first-time dependency installation is not blocked by a user-level remote-package policy.
+
 ## v1.0.3 - 2026-08-17
 
 + [Fixed] Removed the unused Pro Components dependency that conflicts with Ant Design 6, so a clean `npm ci` install succeeds.

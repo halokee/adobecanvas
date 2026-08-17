@@ -80,7 +80,7 @@ python -m venv .venv
 
 ```powershell
 cd web
-npm ci
+npm ci --allow-remote=all
 npm run dev # http://localhost:3000
 ```
 
@@ -88,7 +88,7 @@ npm run dev # http://localhost:3000
 
 ```powershell
 cd web
-npm ci
+npm ci --allow-remote=all
 npm run build
 ```
 
@@ -100,7 +100,7 @@ source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
 
 cd web
-npm ci
+npm ci --allow-remote=all
 npm run build
 cd ..
 

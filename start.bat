@@ -93,7 +93,7 @@ echo       Installing frontend dependencies...
 pushd "web"
 if errorlevel 1 goto :fail
 if not exist "package-lock.json" goto :install_frontend_without_lock
-call %NPM% ci
+call %NPM% ci --allow-remote=all
 if errorlevel 1 goto :frontend_install_failed
 copy /y "package-lock.json" "node_modules\.local-canvas-package-lock.json" >nul
 if errorlevel 1 goto :frontend_install_failed
@@ -101,7 +101,7 @@ popd
 goto :build_frontend
 
 :install_frontend_without_lock
-call %NPM% install
+call %NPM% install --allow-remote=all
 if errorlevel 1 goto :frontend_install_failed
 if exist "package-lock.json" copy /y "package-lock.json" "node_modules\.local-canvas-package-lock.json" >nul
 popd

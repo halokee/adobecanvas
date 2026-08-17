@@ -120,9 +120,9 @@ if [ ! -f "$ROOT/web/package-lock.json" ] \
     (
         cd "$ROOT/web" || exit 1
         if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --allow-remote=all
         else
-            npm install
+            npm install --allow-remote=all
         fi
     ) || fail "Could not install frontend dependencies."
 fi

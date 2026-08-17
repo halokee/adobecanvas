@@ -54,7 +54,7 @@ OUTPUTS_DIR = BASE_DIR / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 WEB_DIST = BASE_DIR / "web" / "dist"
 
-app = FastAPI(title="Local Canvas", version="1.0.3")
+app = FastAPI(title="Local Canvas", version="1.0.4")
 
 # The bundled UI is served from this process. Vite development needs the two
 # local origins below; accepting arbitrary origins exposes localhost secrets.
