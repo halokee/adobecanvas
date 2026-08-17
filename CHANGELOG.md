@@ -4,6 +4,11 @@
 
 + [新增] 提示词来源新增 Freestylefly GPT Image 2 内置来源。
 
+## v1.0.3 - 2026-08-17
+
++ [Fixed] Removed the unused Pro Components dependency that conflicts with Ant Design 6, so a clean `npm ci` install succeeds.
++ [Changed] The Windows launcher now uses local port checks and normal browser association only, reducing heuristic antivirus false positives.
+
 ## v1.0.2 - 2026-08-15
 
 + [新增] 增加 macOS 双击启动脚本 `start.command`，自动创建 Python 环境、安装依赖、构建前端并启动服务。

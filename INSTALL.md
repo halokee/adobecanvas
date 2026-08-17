@@ -65,7 +65,7 @@ Copy-Item config/refresh_profiles.example.json config/refresh_profiles.json
 
 1. 在项目目录创建 `.venv` 并安装后端 Python 依赖；
 2. 安装前端依赖并构建前端；
-3. 启动服务，健康检查通过后自动打开浏览器。
+3. 服务开始监听本机端口后自动打开浏览器。
 
 启动完成后会自动打开 [http://127.0.0.1:8900](http://127.0.0.1:8900)。首次下载依赖和构建前端可能需要几分钟，请保持命令窗口打开并等待日志继续输出；运行时按 `Ctrl+C` 停止服务。
 

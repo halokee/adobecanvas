@@ -1,4 +1,6 @@
 @echo off
+if /I "%~1"==":open_browser" goto :open_browser
+
 setlocal EnableExtensions DisableDelayedExpansion
 title Local Canvas
 
@@ -20,13 +22,7 @@ if not exist "backend\main.py" goto :project_not_found
 if not exist "backend\requirements.txt" goto :project_not_found
 if not exist "web\package.json" goto :project_not_found
 
-REM Open an already-running Local Canvas instance instead of failing on its port.
-powershell.exe -NoProfile -Command "try { $response = Invoke-WebRequest -UseBasicParsing '%APP_URL%/api/health' -TimeoutSec 2; if ($response.StatusCode -eq 200) { exit 0 }; exit 1 } catch { exit 1 }" >nul 2>nul
-if not errorlevel 1 goto :already_running
-
-REM Report a different process using the selected port before dependency work starts.
-powershell.exe -NoProfile -Command "$listener = Get-NetTCPConnection -State Listen -LocalPort %LOCAL_CANVAS_PORT% -ErrorAction SilentlyContinue; if ($listener) { exit 0 }; exit 1" >nul 2>nul
-if not errorlevel 1 goto :port_in_use
+REM Use only built-in local port checks to keep the launcher simple and transparent.
 netstat -ano | findstr /R /C:":%LOCAL_CANVAS_PORT% .*LISTENING" >nul
 if not errorlevel 1 goto :port_in_use
 
@@ -87,9 +83,9 @@ node -e "const [major, minor] = process.versions.node.split('.').map(Number); pr
 if errorlevel 1 goto :node_version_error
 
 if not exist "web\package-lock.json" goto :install_frontend
-if not exist "web\node_modules\.package-lock.json" goto :install_frontend
-powershell.exe -NoProfile -Command "$source = Get-Item 'web\package-lock.json'; $marker = Get-Item 'web\node_modules\.package-lock.json'; if ($source.LastWriteTimeUtc -gt $marker.LastWriteTimeUtc) { exit 0 }; exit 1" >nul 2>nul
-if not errorlevel 1 goto :install_frontend
+if not exist "web\node_modules\.local-canvas-package-lock.json" goto :install_frontend
+fc /b "web\package-lock.json" "web\node_modules\.local-canvas-package-lock.json" >nul
+if errorlevel 1 goto :install_frontend
 goto :build_frontend
 
 :install_frontend
@@ -99,12 +95,15 @@ if errorlevel 1 goto :fail
 if not exist "package-lock.json" goto :install_frontend_without_lock
 call %NPM% ci
 if errorlevel 1 goto :frontend_install_failed
+copy /y "package-lock.json" "node_modules\.local-canvas-package-lock.json" >nul
+if errorlevel 1 goto :frontend_install_failed
 popd
 goto :build_frontend
 
 :install_frontend_without_lock
 call %NPM% install
 if errorlevel 1 goto :frontend_install_failed
+if exist "package-lock.json" copy /y "package-lock.json" "node_modules\.local-canvas-package-lock.json" >nul
 popd
 
 :build_frontend
@@ -121,19 +120,15 @@ echo Keep this window open while the service is running.
 echo Press Ctrl+C to stop it.
 echo.
 
-if not defined LOCAL_CANVAS_NO_BROWSER start "" /b powershell.exe -NoProfile -WindowStyle Hidden -Command "$deadline = (Get-Date).AddSeconds(30); do { try { $response = Invoke-WebRequest -UseBasicParsing '%APP_URL%/api/health' -TimeoutSec 2; if ($response.StatusCode -eq 200) { Start-Process '%APP_URL%'; exit } } catch {} ; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $deadline)"
+if not defined LOCAL_CANVAS_NO_BROWSER start "" /b cmd.exe /d /c call "%~f0" :open_browser "%APP_URL%" "%LOCAL_CANVAS_PORT%"
 "%VENV_PYTHON%" -m uvicorn backend.main:app --host 127.0.0.1 --port %LOCAL_CANVAS_PORT%
 if errorlevel 1 goto :fail
 goto :done
 
-:already_running
-echo Local Canvas is already running at %APP_URL%.
-if not defined LOCAL_CANVAS_NO_BROWSER start "" "%APP_URL%"
-goto :done
-
 :port_in_use
 echo [ERROR] Port %LOCAL_CANVAS_PORT% is already in use by another program.
-echo Close that program, or choose another port from Command Prompt:
+echo If this is an existing Local Canvas instance, open %APP_URL% in a browser.
+echo Otherwise close that program, or choose another port from Command Prompt:
 echo   set LOCAL_CANVAS_PORT=8901
 echo   start.bat
 goto :fail
@@ -183,5 +178,25 @@ endlocal
 exit /b 1
 
 :done
+endlocal
+exit /b 0
+
+:open_browser
+setlocal EnableExtensions DisableDelayedExpansion
+set "APP_URL=%~2"
+set "PORT=%~3"
+
+REM Wait only for a local listening port, then use the normal Windows browser
+REM association.
+for /l %%I in (1,1,30) do (
+    netstat -ano | findstr /R /C:":%PORT% .*LISTENING" >nul
+    if not errorlevel 1 (
+        start "" "%APP_URL%"
+        endlocal
+        exit /b 0
+    )
+    ping.exe -n 2 127.0.0.1 >nul
+)
+
 endlocal
 exit /b 0
